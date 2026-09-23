@@ -57,7 +57,7 @@ form.card > button.primary { grid-column: 1 / -1; margin: 0; }
 .empty { color: var(--muted); text-align: center; margin: 24px 0; }
 
 #nav { position: fixed; inset: auto 0 0 0; display: flex; background: var(--card); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); }
-#nav a { flex: 1; text-align: center; padding: 14px 0; font-size: .9rem; text-decoration: none; color: var(--muted); font-weight: 600; }
+#nav a { flex: 1; text-align: center; padding: 14px 0; font-size: .8rem; text-decoration: none; color: var(--muted); font-weight: 600; }
 #nav a.on { color: var(--accent); box-shadow: inset 0 3px var(--accent); }
 
 #toast { position: fixed; left: 12px; right: 12px; bottom: calc(72px + env(safe-area-inset-bottom)); max-width: 616px; margin: 0 auto; background: var(--text); color: var(--bg); padding: 10px 14px; border-radius: 10px; text-align: center; }
@@ -71,3 +71,25 @@ form.card > button.primary { grid-column: 1 / -1; margin: 0; }
 .item button { padding: 4px 8px; margin-left: 4px; }
 .day form.quick { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }
 .day form.quick .wide, .day form.quick button.primary { grid-column: 1 / -1; }
+
+/* offline queue, delete confirm, link/label styled as buttons, editable task titles */
+.offline { background: var(--card); border: 1px dashed var(--muted); border-radius: 10px; padding: 8px 10px; margin: 0 0 8px; font-size: .9rem; color: var(--muted); }
+.confirm { flex-basis: 100%; display: grid; gap: 8px; }
+.confirm button.primary { width: auto; margin: 0; padding: 8px 12px; }
+a.button, label.button { display: inline-block; border: 1px solid var(--line); background: var(--card); border-radius: 10px; padding: 8px 12px; cursor: pointer; color: var(--text); font-size: 1rem; text-decoration: none; }
+.item button.edit { flex: 1; border: 0; background: none; padding: 0; margin: 0; text-align: left; }
+.actions button.primary { flex: 1; width: auto; margin: 0; }
+
+/* forecast: one row per week, stacked project bars, dashed line at the pensum */
+.forecast { padding: 4px 12px; }
+.fweek { display: grid; grid-template-columns: 4.5em 1fr 5.5em; align-items: center; gap: 8px; width: 100%; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: 10px 0; background: none; text-align: left; }
+.fweek:last-child { border-bottom: 0; }
+.fdate { font-size: .85rem; color: var(--muted); }
+.fbar { position: relative; display: flex; height: 16px; background: var(--line); border-radius: 4px; }
+.fbar i { display: block; height: 100%; background: var(--c); }
+.fbar::after { content: ''; position: absolute; top: -2px; bottom: -2px; left: var(--pensum); border-left: 2px dashed var(--text); }
+.ffree { font-size: .85rem; font-weight: 600; color: var(--ok); text-align: right; }
+.ffree.bad { color: var(--bad); }
+.fnote { grid-column: 2 / -1; color: var(--muted); }
+.flegend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: .85rem; color: var(--muted); }
+.flegend span::before { content: ''; display: inline-block; width: 10px; height: 10px; border-radius: 3px; background: var(--c); margin-right: 5px; }

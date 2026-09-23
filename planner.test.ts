@@ -1,13 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { computeWeek, mondayOf, addDays } from './src/planner.js';
+import { computeWeek, forecast, planWeek, mondayOf, addDays, type CalcProject, type Week } from './src/planner.ts';
+import type { Project, Task } from './src/types.ts';
 
 const W = '2026-09-21';
-const work = { id: 1, kind: 'weekly', hours_per_week: 20 };
-const code = { id: 2, kind: 'weekly', hours_per_week: 10, start_date: '2026-10-01', end_date: '2026-12-31' };
-const thesis = { id: 3, kind: 'budget', total_hours: 100, end_date: '2026-12-20' };
-const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, `${a} != ${b}`);
-const row = (r, id) => r.rows.find((x) => x.project.id === id);
+const work: CalcProject = { id: 1, kind: 'weekly', hours_per_week: 20 };
+const code: CalcProject = { id: 2, kind: 'weekly', hours_per_week: 10, start_date: '2026-10-01', end_date: '2026-12-31' };
+const thesis: CalcProject = { id: 3, kind: 'budget', total_hours: 100, end_date: '2026-12-20' };
+const near = (a: number, b: number) => assert.ok(Math.abs(a - b) < 1e-9, `${a} != ${b}`);
+const row = (r: Week, id: number) => r.rows.find((x) => x.project.id === id)!;
 
 test('date helpers', () => {
   assert.equal(mondayOf('2026-09-27'), W); // Sunday
@@ -64,11 +65,22 @@ test('this week logs do not move the target; overbooked; archived skipped', () =
   assert.equal(r.rows.length, 2);
 });
 
-test('planWeek: work on Mon-Wed splits hours; tasks land on their day; unscheduled = required - planned', async () => {
-  const { planWeek } = await import('./src/planner.js');
-  const w3 = { ...work, days: '1,2,3', hours_per_week: 24 };
-  const tasks = [{ id: 1, project_id: 3, title: 'Outline', date: '2026-09-24', hours: 2 }];
-  const { days, planned } = planWeek({ projects: [w3, thesis], tasks }, W);
+test('forecast keeps budget hours even when you stick to the plan; overbooking shows in the right week', () => {
+  const logs = [{ project_id: 3, date: '2026-09-10', hours: 30 }];
+  const f = forecast({ pensum: 30, projects: [work, code, thesis], logs }, W, 14);
+  assert.equal(f.length, 14);
+  assert.equal(f[1].weekStart, '2026-09-28');
+  for (const w of f.slice(0, 13)) near(row(w, 3).required, 70 / 13); // same share every week up to the deadline
+  assert.equal(row(f[13], 3).required, 0); // after the deadline: done, not overdue
+  assert.equal(row(f[13], 3).overdue, false);
+  assert.deepEqual(f.map((w) => w.overbooked).slice(0, 3), [false, true, true]); // code starts 2026-10-01, in the second week
+  assert.equal(logs.length, 1); // input not mutated
+});
+
+test('planWeek: work on Mon-Wed splits hours; tasks land on their day; unscheduled = required - planned', () => {
+  const w3 = { ...work, days: '1,2,3', hours_per_week: 24 } as Project;
+  const tasks: Task[] = [{ id: 1, project_id: 3, title: 'Outline', date: '2026-09-24', hours: 2 }];
+  const { days, planned } = planWeek({ projects: [w3, thesis as Project], tasks }, W);
   assert.deepEqual(days.map((d) => d.fixed.length), [1, 1, 1, 0, 0, 0, 0]);
   assert.equal(days[0].hours, 8);
   assert.equal(days[3].tasks.length, 1);

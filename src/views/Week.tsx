@@ -1,8 +1,8 @@
 import { Fragment, useState } from 'react';
-import { useApp } from '../App.jsx';
-import { computeWeek, mondayOf, addDays, today } from '../planner.js';
-import { h, dl, dshort, pct } from '../format.js';
-import { LogForm } from './Log.jsx';
+import { useApp } from '../App.tsx';
+import { computeWeek, mondayOf, addDays, today } from '../planner.ts';
+import { h, dl, dshort, pct } from '../format.ts';
+import { LogForm } from './Log.tsx';
 
 export function WeekPicker() {
   const { weekStart, setWeekStart } = useApp();
@@ -21,7 +21,7 @@ export function WeekPicker() {
 
 export default function Week() {
   const { state, weekStart } = useApp();
-  const [quick, setQuick] = useState(null); // project id with the quick-log form open
+  const [quick, setQuick] = useState<number | null>(null); // project id with the quick-log form open
   const w = computeWeek(state, weekStart);
 
   return (
