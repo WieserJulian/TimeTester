@@ -1,5 +1,5 @@
 // App shell only. Network first so updates show up; cache is the offline fallback. /api/* is never cached.
-const CACHE = 'timetester-v1';
+const CACHE = 'timetester-v2';
 const SHELL = ['/', '/app.js', '/planner.js', '/style.css', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png'];
 
 self.addEventListener('install', (e) => {

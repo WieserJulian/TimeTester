@@ -33,20 +33,33 @@ CREATE TABLE IF NOT EXISTS logs (
   date TEXT NOT NULL,
   hours REAL NOT NULL CHECK (hours > 0),
   note TEXT
+);
+CREATE TABLE IF NOT EXISTS tasks (
+  id INTEGER PRIMARY KEY,
+  project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  date TEXT NOT NULL,
+  hours REAL NOT NULL CHECK (hours > 0)
 );`);
+// weekdays a weekly project runs on, '1,2,3' = Mon-Wed (added after v1, so migrate existing DBs)
+if (!db.prepare('PRAGMA table_info(projects)').all().some((c) => c.name === 'days')) db.exec('ALTER TABLE projects ADD COLUMN days TEXT');
 
 const q = {
   settings: db.prepare("SELECT value FROM settings WHERE key = 'pensum'"),
   setPensum: db.prepare("INSERT INTO settings (key, value) VALUES ('pensum', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"),
   projects: db.prepare('SELECT * FROM projects ORDER BY id'),
   project: db.prepare('SELECT * FROM projects WHERE id = ?'),
-  addProject: db.prepare('INSERT INTO projects (name, color, kind, hours_per_week, total_hours, start_date, end_date, archived) VALUES (?,?,?,?,?,?,?,?)'),
-  setProject: db.prepare('UPDATE projects SET name=?, color=?, kind=?, hours_per_week=?, total_hours=?, start_date=?, end_date=?, archived=? WHERE id=?'),
+  addProject: db.prepare('INSERT INTO projects (name, color, kind, hours_per_week, total_hours, start_date, end_date, archived, days) VALUES (?,?,?,?,?,?,?,?,?)'),
+  setProject: db.prepare('UPDATE projects SET name=?, color=?, kind=?, hours_per_week=?, total_hours=?, start_date=?, end_date=?, archived=?, days=? WHERE id=?'),
   delProject: db.prepare('DELETE FROM projects WHERE id = ?'),
   logs: db.prepare('SELECT * FROM logs ORDER BY date DESC, id DESC'),
   log: db.prepare('SELECT * FROM logs WHERE id = ?'),
   addLog: db.prepare('INSERT INTO logs (project_id, date, hours, note) VALUES (?,?,?,?)'),
   delLog: db.prepare('DELETE FROM logs WHERE id = ?'),
+  tasks: db.prepare('SELECT * FROM tasks ORDER BY date, id'),
+  task: db.prepare('SELECT * FROM tasks WHERE id = ?'),
+  addTask: db.prepare('INSERT INTO tasks (project_id, title, date, hours) VALUES (?,?,?,?)'),
+  delTask: db.prepare('DELETE FROM tasks WHERE id = ?'),
 };
 
 class HttpError extends Error { constructor(status, message) { super(message); this.status = status; } }
@@ -68,7 +81,12 @@ function cleanProject(b) {
   if (b.kind === 'weekly') { if (!isPos(b.hours_per_week)) bad('hours_per_week must be > 0'); hpw = b.hours_per_week; }
   else { if (!isPos(b.total_hours)) bad('total_hours must be > 0'); if (!end) bad('deadline (end_date) required'); total = b.total_hours; }
   if (b.archived != null && b.archived !== 0 && b.archived !== 1) bad('archived must be 0 or 1');
-  return [b.name.trim(), color, b.kind, hpw, total, start, end, b.archived ?? 0];
+  let days = null;
+  if (b.kind === 'weekly' && b.days) {
+    if (typeof b.days !== 'string' || !/^[1-7](,[1-7])*$/.test(b.days)) bad('days must look like 1,2,3 (Mon=1)');
+    days = [...new Set(b.days.split(','))].sort().join(',');
+  }
+  return [b.name.trim(), color, b.kind, hpw, total, start, end, b.archived ?? 0, days];
 }
 
 function cleanLog(b) {
@@ -79,7 +97,15 @@ function cleanLog(b) {
   return [b.project_id, b.date, b.hours, b.note || null];
 }
 
-const state = () => ({ pensum: Number(q.settings.get()?.value ?? 60), projects: q.projects.all(), logs: q.logs.all() });
+function cleanTask(b) {
+  if (typeof b.title !== 'string' || !b.title.trim()) bad('title required');
+  if (b.project_id != null && !Number.isInteger(b.project_id)) bad('project_id must be an integer');
+  if (!isDate(b.date)) bad('date must be YYYY-MM-DD');
+  if (!isPos(b.hours)) bad('hours must be > 0');
+  return [b.project_id ?? null, b.title.trim().slice(0, 200), b.date, b.hours];
+}
+
+const state = () => ({ pensum: Number(q.settings.get()?.value ?? 60), projects: q.projects.all(), logs: q.logs.all(), tasks: q.tasks.all() });
 
 function api(method, parts, body) {
   const res = parts[1], id = Number(parts[2]);
@@ -99,6 +125,10 @@ function api(method, parts, body) {
   if (res === 'logs') {
     if (method === 'POST') return q.log.get(q.addLog.run(...cleanLog(body)).lastInsertRowid);
     if (method === 'DELETE' && Number.isInteger(id)) { q.delLog.run(id); return { ok: true }; }
+  }
+  if (res === 'tasks') {
+    if (method === 'POST') return q.task.get(q.addTask.run(...cleanTask(body)).lastInsertRowid);
+    if (method === 'DELETE' && Number.isInteger(id)) { q.delTask.run(id); return { ok: true }; }
   }
   throw new HttpError(404, 'not found');
 }

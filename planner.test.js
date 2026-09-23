@@ -63,3 +63,15 @@ test('this week logs do not move the target; overbooked; archived skipped', () =
   assert.equal(r.overbooked, true);
   assert.equal(r.rows.length, 2);
 });
+
+test('planWeek: work on Mon-Wed splits hours; tasks land on their day; unscheduled = required - planned', async () => {
+  const { planWeek } = await import('./public/planner.js');
+  const w3 = { ...work, days: '1,2,3', hours_per_week: 24 };
+  const tasks = [{ id: 1, project_id: 3, title: 'Outline', date: '2026-09-24', hours: 2 }];
+  const { days, planned } = planWeek({ projects: [w3, thesis], tasks }, W);
+  assert.deepEqual(days.map((d) => d.fixed.length), [1, 1, 1, 0, 0, 0, 0]);
+  assert.equal(days[0].hours, 8);
+  assert.equal(days[3].tasks.length, 1);
+  assert.equal(planned[1], 24);
+  assert.equal(planned[3], 2);
+});

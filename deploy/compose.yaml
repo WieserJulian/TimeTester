@@ -1,6 +1,6 @@
 services:
   timetester:
-    image: ghcr.io/OWNER/REPO:${TAG:-latest}   # lowercase GitHub user/repo
+    image: ghcr.io/wieserjulian/timetester:${TAG:-latest}   # lowercase GitHub user/repo
     labels: ["com.centurylinklabs.watchtower.enable=true"]
     restart: unless-stopped
     ports: ["127.0.0.1:8787:8787"]   # localhost only; Tailscale / cloudflared expose it

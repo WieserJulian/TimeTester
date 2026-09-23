@@ -36,3 +36,24 @@ export function computeWeek({ pensum, projects, logs }, weekStart) {
     loggedTotal: rows.reduce((a, r) => a + r.logged, 0), overbooked: committed > pensum, rows,
   };
 }
+
+
+// Day-by-day plan. Weekly projects with `days` (e.g. '1,2,3' = Mon-Wed) split hours_per_week evenly over those days.
+// `planned[project_id]` = fixed + task hours, so required - planned is what's still unscheduled.
+export function planWeek({ projects, tasks }, weekStart) {
+  const planned = {};
+  const add = (id, h) => { if (id != null) planned[id] = (planned[id] || 0) + h; };
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const date = addDays(weekStart, i);
+    const fixed = projects
+      .filter((p) => !p.archived && p.kind === 'weekly' && p.days && p.days.split(',').includes(String(i + 1))
+        && (!p.start_date || p.start_date <= date) && (!p.end_date || p.end_date >= date))
+      .map((project) => ({ project, hours: project.hours_per_week / project.days.split(',').length }));
+    const dayTasks = tasks.filter((t) => t.date === date);
+    fixed.forEach((f) => add(f.project.id, f.hours));
+    dayTasks.forEach((t) => add(t.project_id, t.hours));
+    const hours = fixed.reduce((a, f) => a + f.hours, 0) + dayTasks.reduce((a, t) => a + t.hours, 0);
+    return { date, fixed, tasks: dayTasks, hours };
+  });
+  return { days, planned };
+}

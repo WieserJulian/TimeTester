@@ -1,16 +1,19 @@
-import { computeWeek, mondayOf, addDays, today } from './planner.js';
+import { computeWeek, planWeek, mondayOf, addDays, today } from './planner.js';
 
 const app = document.getElementById('app');
 const toastEl = document.getElementById('toast');
-let state = { pensum: 60, projects: [], logs: [] };
+let state = { pensum: 60, projects: [], logs: [], tasks: [] };
 let weekStart = mondayOf(today());
 let editing = null; // null = no form, 'new' or project id
 let quick = null; // project id with the quick-log form open
+let taskDay = null; // date with the add-task form open
+const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 // ---------- helpers ----------
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const h = (n) => `${Math.round(n * 10) / 10}h`;
 const dl = (s) => new Date(s + 'T00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+const dday = (s) => new Date(s + 'T00:00').toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
 const dshort = (s) => new Date(s + 'T00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
 const pct = (n, of) => Math.max(0, Math.min(100, (n / of) * 100));
 
@@ -34,9 +37,15 @@ const projectOptions = (selected) => state.projects.filter((p) => !p.archived)
   .map((p) => `<option value="${p.id}" ${p.id === selected ? 'selected' : ''}>${esc(p.name)}</option>`).join('');
 
 // ---------- views ----------
+const picker = () => `
+    <div class="picker">
+      <button data-act="week-prev" aria-label="Previous week">◀</button>
+      <div><b>${dshort(weekStart)} – ${dl(addDays(weekStart, 6))}</b>${weekStart === mondayOf(today()) ? '' : '<br><a href="#" data-act="week-now">this week</a>'}</div>
+      <button data-act="week-next" aria-label="Next week">▶</button>
+    </div>`;
+
 function weekView() {
   const w = computeWeek(state, weekStart);
-  const isNow = weekStart === mondayOf(today());
   const rows = w.rows.map((r) => {
     const p = r.project;
     return `
@@ -55,11 +64,7 @@ function weekView() {
   }).join('');
 
   return `
-    <div class="picker">
-      <button data-act="week-prev" aria-label="Previous week">◀</button>
-      <div><b>${dshort(weekStart)} – ${dl(addDays(weekStart, 6))}</b>${isNow ? '' : '<br><a href="#" data-act="week-now">this week</a>'}</div>
-      <button data-act="week-next" aria-label="Next week">▶</button>
-    </div>
+    ${picker()}
     ${w.overbooked ? `<div class="banner">Overbooked: ${h(w.committed)} committed vs a ${h(w.pensum)} pensum (${h(-w.free)} over).</div>` : ''}
     <div class="card">
       <div class="free ${w.overbooked ? 'bad' : ''}">${h(w.free)} <small>free of ${h(w.pensum)}</small></div>
@@ -71,10 +76,42 @@ function weekView() {
     ${rows || '<p class="empty">No active projects this week. <a href="#projects">Add one</a>.</p>'}`;
 }
 
+function planView() {
+  const { days, planned } = planWeek(state, weekStart);
+  const w = computeWeek(state, weekStart);
+  const byId = Object.fromEntries(state.projects.map((p) => [p.id, p]));
+  const todo = w.rows.map((r) => ({ ...r, todo: r.required - (planned[r.project.id] || 0) })).filter((r) => r.todo > 0.05);
+  const cards = days.map((d) => `
+    <div class="card day ${d.date === today() ? 'now' : ''}">
+      <div class="dayhead"><b>${dday(d.date)}</b><span>${d.hours ? h(d.hours) : ''}</span>
+        <button data-act="task-day" data-date="${d.date}" aria-label="Add task">+</button></div>
+      ${d.fixed.map((f) => `<div class="item fixed" style="--c:${esc(f.project.color)}"><span>${esc(f.project.name)}</span><span>${h(f.hours)}</span></div>`).join('')}
+      ${d.tasks.map((t) => `<div class="item" style="--c:${esc((byId[t.project_id] || { color: '#888' }).color)}">
+        <span>${esc(t.title)}${byId[t.project_id] ? ` <small>${esc(byId[t.project_id].name)}</small>` : ''}</span>
+        <span>${h(t.hours)}
+          ${byId[t.project_id] ? `<button data-act="done-task" data-id="${t.id}" aria-label="Done, log the hours">✓</button>` : ''}
+          <button class="danger" data-act="del-task" data-id="${t.id}" aria-label="Delete task">✕</button></span></div>`).join('')}
+      ${taskDay === d.date ? `
+      <form class="quick" data-form="task">
+        <input type="hidden" name="date" value="${d.date}">
+        <label class="wide">Task <input name="title" required maxlength="200" autofocus></label>
+        <label>Hours <input name="hours" type="number" step="0.25" min="0.25" inputmode="decimal" required></label>
+        <label>Project <select name="project_id"><option value="">–</option>${projectOptions()}</select></label>
+        <button class="primary">Add task</button>
+      </form>` : ''}
+    </div>`).join('');
+  return `
+    ${picker()}
+    ${cards}
+    ${todo.length ? `<h3>Still to schedule</h3><div class="card">${todo.map((r) => `
+      <div class="item" style="--c:${esc(r.project.color)}"><span>${esc(r.project.name)}</span><span><b>${h(r.todo)}</b> of ${h(r.required)}</span></div>`).join('')}</div>` : ''}`;
+}
+
 function describe(p) {
   if (p.kind === 'weekly') {
     const range = p.start_date || p.end_date ? ` · ${p.start_date ? dl(p.start_date) : '…'} → ${p.end_date ? dl(p.end_date) : '…'}` : '';
-    return `${h(p.hours_per_week)}/week${range}`;
+    const on = p.days ? ` on ${p.days.split(',').map((d) => DAYS[d - 1]).join(', ')}` : '';
+    return `${h(p.hours_per_week)}/week${on}${range}`;
   }
   return `${h(p.total_hours)} by ${dl(p.end_date)}${p.start_date ? ` (from ${dl(p.start_date)})` : ''}`;
 }
@@ -91,6 +128,7 @@ function projectForm() {
     </div>
     <label class="only-weekly">Hours / week <input name="hours_per_week" type="number" step="0.25" min="0.25" inputmode="decimal" value="${p.hours_per_week ?? ''}"></label>
     <label class="only-budget">Total hours <input name="total_hours" type="number" step="0.25" min="0.25" inputmode="decimal" value="${p.total_hours ?? ''}"></label>
+    <div class="seg wide only-weekly">${DAYS.map((d, i) => `<label><input type="checkbox" name="days" value="${i + 1}" ${(p.days || '').split(',').includes(String(i + 1)) ? 'checked' : ''}> ${d}</label>`).join('')}</div>
     <label>Color <input name="color" type="color" value="${esc(p.color)}"></label>
     <label>Start <span class="hint">(optional)</span> <input name="start_date" type="date" value="${p.start_date ?? ''}"></label>
     <label><span class="only-weekly">End <span class="hint">(optional)</span></span><span class="only-budget">Deadline</span> <input name="end_date" type="date" value="${p.end_date ?? ''}"></label>
@@ -140,7 +178,7 @@ function settingsView() {
     </form>`;
 }
 
-const views = { week: weekView, projects: projectsView, log: logView, settings: settingsView };
+const views = { week: weekView, plan: planView, projects: projectsView, log: logView, settings: settingsView };
 const currentView = () => (location.hash.slice(1) in views ? location.hash.slice(1) : 'week');
 
 function render() {
@@ -155,7 +193,7 @@ function render() {
 function readDraft(form) {
   const f = new FormData(form), num = (k) => (f.get(k) === '' ? null : Number(f.get(k)));
   return { kind: f.get('kind'), name: f.get('name'), color: f.get('color'), hours_per_week: num('hours_per_week'), total_hours: num('total_hours'),
-    start_date: f.get('start_date') || null, end_date: f.get('end_date') || null, archived: 0 };
+    start_date: f.get('start_date') || null, end_date: f.get('end_date') || null, archived: 0, days: f.getAll('days').join(',') || null };
 }
 
 function updatePreview() {
@@ -177,6 +215,13 @@ const actions = {
   'week-next': () => (weekStart = addDays(weekStart, 7)),
   'week-now': () => (weekStart = mondayOf(today())),
   quick: (id) => (quick = quick === id ? null : id),
+  'task-day': (_, el) => (taskDay = taskDay === el.dataset.date ? null : el.dataset.date),
+  'del-task': (id) => api('DELETE', `/api/tasks/${id}`).then(load),
+  async 'done-task'(id) { // finishing a task logs its hours to the project, then drops the task
+    const t = state.tasks.find((x) => x.id === id);
+    await api('POST', '/api/logs', { project_id: t.project_id, date: today(), hours: t.hours, note: t.title });
+    await api('DELETE', `/api/tasks/${id}`); await load();
+  },
   'new-project': () => (editing = 'new'),
   edit: (id) => (editing = id),
   'cancel-edit': () => (editing = null),
@@ -188,6 +233,10 @@ const actions = {
 
 const forms = {
   async quick(f) { await api('POST', '/api/logs', logBody(f)); quick = null; },
+  async task(f) {
+    await api('POST', '/api/tasks', { title: f.get('title'), date: f.get('date'), hours: Number(f.get('hours')), project_id: f.get('project_id') ? Number(f.get('project_id')) : null });
+    taskDay = null;
+  },
   async log(f) { await api('POST', '/api/logs', logBody(f)); },
   async settings(f) { await api('PUT', '/api/settings', { pensum: Number(f.get('pensum')) }); },
   async project(f, form) {
@@ -203,7 +252,7 @@ app.addEventListener('click', async (e) => {
   const el = e.target.closest('[data-act]');
   if (!el) return;
   e.preventDefault();
-  try { await actions[el.dataset.act](el.dataset.id && Number(el.dataset.id)); } catch (err) { toast(err.message); }
+  try { await actions[el.dataset.act](el.dataset.id && Number(el.dataset.id), el); } catch (err) { toast(err.message); }
   render();
 });
 
@@ -221,7 +270,7 @@ app.addEventListener('input', (e) => {
   updatePreview();
 });
 
-window.addEventListener('hashchange', () => { editing = quick = null; render(); });
+window.addEventListener('hashchange', () => { editing = quick = taskDay = null; render(); });
 
 await load();
 render();
