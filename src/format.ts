@@ -7,3 +7,4 @@ export const dshort = date({ day: 'numeric', month: 'short' });
 export const pct = (n: number, of: number) => Math.max(0, Math.min(100, (n / of) * 100));
 export const num = (v: FormDataEntryValue | number | null | undefined) => (v === '' || v == null ? null : Number(v));
 export const str = (f: FormData, k: string) => String(f.get(k) ?? '');
+export const weekdayName = date({ weekday: 'short' });

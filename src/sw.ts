@@ -3,11 +3,14 @@
 //  - GET /api/state: network first, last good copy when offline.
 //  - Writes (POST/PUT/DELETE /api/*) that fail for lack of network are queued and replayed in order
 //    when the connection is back (Background Sync where supported, otherwise on the next app load/online event).
-import type { SwMessage } from './types.ts';
+//  - Reminders: Periodic Background Sync (installed app, Chrome/Android; the browser decides when,
+//    about twice a day at most) checks deadlines, overbooked weeks and "nothing logged today".
+import type { State, SwMessage } from './types.ts';
+import { alerts, today } from './planner.ts';
 
 declare const self: ServiceWorkerGlobalScope;
 
-const CACHE = 'timetester-v4';
+const CACHE = 'timetester-v5';
 const QUEUE_CACHE = 'timetester-queue'; // survives CACHE version bumps
 const SHELL = ['/', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png'];
 
@@ -73,6 +76,33 @@ async function state(req: Request) {
     return (await caches.match('/api/state')) ?? Response.json({ error: 'offline and nothing cached yet' }, { status: 503 });
   }
 }
+
+// ---------- reminders ----------
+// Each alert once per day; "overbooked" ones only once, they don't change by the day.
+async function remind() {
+  const s: State | undefined = await fetch('/api/state').then((r) => r.json(), async () => (await caches.match('/api/state'))?.json());
+  if (!s?.projects) return;
+  const now = today();
+  const list = alerts(s, now);
+  if (new Date().getHours() >= 18 && !s.logs.some((l) => l.date === now)) list.unshift({ key: `nolog:${now}`, text: 'Nothing logged today yet', bad: false });
+  const store = await caches.open(QUEUE_CACHE);
+  const seen: Record<string, string> = (await (await store.match('/notified'))?.json()) ?? {};
+  for (const a of list) {
+    const key = a.key.startsWith('over:') ? a.key : `${a.key}@${now}`;
+    if (seen[key]) continue;
+    await self.registration.showNotification('Time Tester', { body: a.text, tag: a.key, icon: '/icon-192.png', badge: '/icon-192.png' });
+    seen[key] = now;
+  }
+  const monthAgo = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
+  await store.put('/notified', Response.json(Object.fromEntries(Object.entries(seen).filter(([, d]) => d >= monthAgo))));
+}
+
+self.addEventListener('periodicsync', ((e: ExtendableEvent & { tag: string }) => { if (e.tag === 'reminders') e.waitUntil(remind()); }) as EventListener);
+self.addEventListener('message', (e) => { if (e.data === 'remind') e.waitUntil(remind()); }); // "Test reminder" button in Settings
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  e.waitUntil(self.clients.matchAll({ type: 'window' }).then((cs) => (cs[0] ? cs[0].focus() : self.clients.openWindow('/'))));
+});
 
 // ---------- events ----------
 self.addEventListener('install', (e) => {

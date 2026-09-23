@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { AddressInfo } from 'node:net';
-import type { Server } from 'node:http';
+import { createServer, type Server } from 'node:http';
 
 const dir = mkdtempSync(path.join(tmpdir(), 'timetester-'));
 process.env.DB_PATH = path.join(dir, 'test.db');
@@ -81,6 +81,64 @@ test('export → import restores the same data; a broken backup changes nothing'
 
   const r = await call('POST', '/api/import', exp.data);
   assert.equal(r.status, 200);
-  assert.deepEqual((await call('GET', '/api/state')).data, exp.data);
+  assert.deepEqual((await call('GET', '/api/export')).data, exp.data);
   assert.equal((await call('POST', '/api/import', { hello: 1 })).status, 400);
+  // a backup from before week_hours/overrides existed still restores
+  const old = { pensum: 35, projects: [], logs: [], tasks: [] };
+  assert.equal((await call('POST', '/api/import', old)).status, 200);
+  assert.deepEqual((await call('GET', '/api/state')).data.week_hours, Array(7).fill(5));
+});
+
+test('weekday hours, days off, timer, recurring tasks', async () => {
+  const week_hours = [10, 10, 10, 10, 10, 5, 5];
+  assert.equal((await call('PUT', '/api/settings', { week_hours })).data.pensum, 60);
+  assert.equal((await call('PUT', '/api/settings', { week_hours: [1, 2, 3] })).status, 400);
+  assert.equal((await call('PUT', '/api/settings', { week_hours: Array(7).fill(0) })).status, 400);
+
+  const o = await call('POST', '/api/overrides', { from: '2026-12-24', to: '2026-12-26', hours: 0, note: 'Christmas' });
+  assert.deepEqual(o.data.map((x: { date: string }) => x.date), ['2026-12-24', '2026-12-25', '2026-12-26']);
+  await call('POST', '/api/overrides', { from: '2026-12-24', hours: 4 }); // replaces
+  await call('DELETE', '/api/overrides/2026-12-26');
+  assert.deepEqual((await call('GET', '/api/state')).data.overrides.map((x: { date: string; hours: number }) => [x.date, x.hours]), [['2026-12-24', 4], ['2026-12-25', 0]]);
+  assert.equal((await call('POST', '/api/overrides', { from: '2026-12-24', hours: 30 })).status, 400);
+  assert.equal((await call('POST', '/api/overrides', { from: '2026-12-24', to: '2026-12-01', hours: 0 })).status, 400);
+
+  const p = (await call('POST', '/api/projects', { name: 'Timer', kind: 'weekly', hours_per_week: 1 })).data;
+  assert.equal((await call('PUT', '/api/timer', { project_id: p.id, started_at: Date.now() + 3600e3 })).status, 400);
+  assert.equal((await call('PUT', '/api/timer', { project_id: 99999, started_at: Date.now() })).status, 400);
+  const started = Date.now() - 60e3;
+  await call('PUT', '/api/timer', { project_id: p.id, started_at: started });
+  assert.deepEqual((await call('GET', '/api/state')).data.timer, { project_id: p.id, started_at: started });
+  await call('DELETE', '/api/timer');
+  assert.equal((await call('GET', '/api/state')).data.timer, null);
+
+  const t = (await call('POST', '/api/tasks', { title: 'Review', date: '2026-09-25', hours: 1, repeat: 'weekly', note: 'check drafts' })).data;
+  assert.equal(t.repeat, 'weekly');
+  assert.equal(t.note, 'check drafts');
+  assert.equal((await call('PUT', `/api/tasks/${t.id}`, { repeat: 'monthly' })).status, 400);
+  assert.equal((await call('PUT', `/api/tasks/${t.id}`, { repeat: null })).data.repeat, null);
+});
+
+test('calendar link: events come from the iCal feed; bad links are rejected or reported', async () => {
+  const now = new Date(), day = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const d = day.replaceAll('-', ''); // the server only keeps events within about a year of today
+  const ics = ['BEGIN:VCALENDAR', 'BEGIN:VEVENT', 'UID:1', `DTSTART:${d}T090000`, `DTEND:${d}T100000`, 'SUMMARY:Standup', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+  const feed = createServer((req, res) => (req.url === '/cal.ics' ? res.end(ics) : res.writeHead(404).end()));
+  await new Promise<void>((ok) => feed.listen(0, ok));
+  const at = `http://localhost:${(feed.address() as AddressInfo).port}`;
+  try {
+    assert.equal((await call('PUT', '/api/settings', { ics_url: 'file:///etc/passwd' })).status, 400);
+    await call('PUT', '/api/settings', { ics_url: `${at}/cal.ics`, ics_counts: true });
+    const s = (await call('GET', '/api/state')).data;
+    assert.deepEqual(s.events, [{ date: day, start: '09:00', hours: 1, title: 'Standup' }]);
+    assert.equal(s.ics_counts, true);
+    assert.equal(s.ics_error, null);
+    await call('PUT', '/api/settings', { ics_url: `${at}/missing.ics` });
+    const broken = (await call('GET', '/api/state')).data;
+    assert.match(broken.ics_error, /404/);
+    assert.deepEqual(broken.events, []);
+  } finally {
+    feed.close();
+    await call('PUT', '/api/settings', { ics_url: '' });
+  }
 });

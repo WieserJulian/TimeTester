@@ -5,6 +5,7 @@ services:
     restart: unless-stopped
     ports: ["127.0.0.1:8787:8787"]   # localhost only; Tailscale / cloudflared expose it
     volumes: ["./data:/data"]
+    environment: ["TZ=${TZ:-Europe/Vienna}"]   # calendar times are converted to this zone
 
   # Pulls the new image after each push to main. Auth: `docker login ghcr.io` on the server first.
   watchtower:

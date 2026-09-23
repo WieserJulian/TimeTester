@@ -13,15 +13,15 @@ h3 { margin: 16px 0 8px; }
 a { color: var(--accent); }
 small, .hint, .legend { color: var(--muted); font-size: .85rem; font-weight: normal; }
 
-button, input, select { font: inherit; color: inherit; }
+button, input, select, textarea { font: inherit; color: inherit; }
 button { border: 1px solid var(--line); background: var(--card); border-radius: 10px; padding: 8px 12px; cursor: pointer; }
 button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; width: 100%; padding: 12px; margin: 4px 0 8px; }
 button.danger { color: var(--bad); }
-input, select { width: 100%; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); min-height: 44px; }
+input, select, textarea { width: 100%; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); min-height: 44px; }
 input[type=radio], input[type=checkbox] { width: auto; min-height: 0; }
 input[type=color] { padding: 2px; }
 label { display: block; font-size: .85rem; color: var(--muted); }
-label input, label select { margin-top: 4px; color: var(--text); font-size: 1rem; }
+label input, label select, label textarea { margin-top: 4px; color: var(--text); font-size: 1rem; }
 
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin: 8px 0; }
 form.card { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -43,7 +43,11 @@ form.card > button.primary { grid-column: 1 / -1; margin: 0; }
 .banner, .preview.bad { background: var(--badbg); color: var(--bad); border: 1px solid var(--bad); border-radius: 10px; padding: 10px; margin: 8px 0; font-weight: 600; }
 .preview { background: var(--bg); border-radius: 10px; padding: 10px; font-size: .9rem; color: var(--text); }
 
-.row { display: block; width: 100%; text-align: left; margin: 8px 0 0; padding: 12px; border-left: 6px solid var(--c); }
+.row { display: flex; align-items: stretch; margin: 8px 0 0; background: var(--card); border: 1px solid var(--line); border-left: 6px solid var(--c); border-radius: 10px; overflow: hidden; }
+.row .main { flex: 1; border: 0; border-radius: 0; text-align: left; padding: 12px; background: none; }
+.row .play, .row .running { width: 52px; border: 0; border-left: 1px solid var(--line); border-radius: 0; background: none; color: var(--c); font-size: 1.1rem; display: grid; place-items: center; }
+.row .running { animation: pulse 1.5s infinite; }
+@keyframes pulse { 50% { opacity: .35; } }
 .row .name { display: block; font-weight: 600; }
 .row .nums { display: block; color: var(--muted); font-size: .9rem; }
 .row .nums b { color: var(--text); }
@@ -93,3 +97,56 @@ a.button, label.button { display: inline-block; border: 1px solid var(--line); b
 .fnote { grid-column: 2 / -1; color: var(--muted); }
 .flegend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: .85rem; color: var(--muted); }
 .flegend span::before { content: ''; display: inline-block; width: 10px; height: 10px; border-radius: 3px; background: var(--c); margin-right: 5px; }
+
+/* notes/alerts, overbooked fixes, undo toast */
+.note { background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 10px; padding: 8px 10px; margin: 8px 0; font-size: .9rem; }
+.fixes { display: grid; gap: 6px; margin-top: 8px; font-weight: normal; }
+.fixes button { text-align: left; color: var(--text); }
+#toast { display: flex; align-items: center; justify-content: center; gap: 12px; }
+#toast button { background: none; border: 1px solid var(--bg); color: var(--bg); padding: 4px 10px; font-weight: 600; }
+button:disabled { opacity: .5; cursor: default; }
+
+/* running timer */
+.timer { background: var(--card); border: 1px solid var(--line); border-left: 6px solid var(--c); border-radius: 12px; padding: 8px 12px; margin: 0 0 8px; }
+.timerrow { display: flex; align-items: center; gap: 8px; }
+.timerrow .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--c); animation: pulse 1.5s infinite; }
+.timerrow .clock { flex: 1; font-variant-numeric: tabular-nums; font-size: 1.2rem; font-weight: 600; }
+.timerrow button.primary { width: auto; margin: 0; padding: 8px 16px; }
+.timer form.quick { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: end; margin-top: 8px; }
+.timer form.quick .wide { grid-column: 1 / -1; font-size: .9rem; }
+.timer form.quick button.primary { margin: 0; }
+
+/* plan: capacity, days off, calendar events, recurring/rolled tasks */
+.dayhead span.over { color: var(--bad); font-weight: 600; }
+.day.off { opacity: .7; }
+.item.event { color: var(--muted); border-left-style: dashed; border-left-color: var(--muted); }
+.item.virtual { opacity: .5; }
+.item button.edit:disabled { opacity: 1; }
+.rolled { color: var(--bad); }
+.tnote { display: block; white-space: pre-wrap; }
+.day form.quick textarea { resize: vertical; }
+
+/* log filters */
+.filters { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.filters .wide { grid-column: 1 / -1; }
+.sumline { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* stats */
+.ranges { gap: 6px; margin-bottom: 8px; }
+.ranges button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.fweek.static { cursor: default; }
+.fbar.two { display: block; }
+.fbar.two i { position: absolute; left: 0; top: 0; }
+.fbar.two i.plan { background: var(--muted); opacity: .45; }
+.fbar.two i.done { background: var(--ok); height: 60%; top: 20%; }
+.fbar i.cal { background: repeating-linear-gradient(45deg, var(--muted) 0 3px, transparent 3px 6px); }
+.flegend .k-plan::before { background: var(--muted); opacity: .45; }
+.flegend .k-done::before { background: var(--ok); }
+.flegend .k-cal::before { background: repeating-linear-gradient(45deg, var(--muted) 0 3px, transparent 3px 6px); }
+.flegend .k-pensum::before { background: none; border-left: 2px dashed var(--text); border-radius: 0; width: 0; }
+
+/* settings */
+.weekhours { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.weekhours input { padding: 8px 4px; text-align: center; }
+label.check { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; color: var(--text); font-size: 1rem; }
+details summary { cursor: pointer; }
