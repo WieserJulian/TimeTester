@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { computeWeek, mondayOf, addDays } from './public/planner.js';
+import { computeWeek, mondayOf, addDays } from './src/planner.js';
 
 const W = '2026-09-21';
 const work = { id: 1, kind: 'weekly', hours_per_week: 20 };
@@ -65,7 +65,7 @@ test('this week logs do not move the target; overbooked; archived skipped', () =
 });
 
 test('planWeek: work on Mon-Wed splits hours; tasks land on their day; unscheduled = required - planned', async () => {
-  const { planWeek } = await import('./public/planner.js');
+  const { planWeek } = await import('./src/planner.js');
   const w3 = { ...work, days: '1,2,3', hours_per_week: 24 };
   const tasks = [{ id: 1, project_id: 3, title: 'Outline', date: '2026-09-24', hours: 2 }];
   const { days, planned } = planWeek({ projects: [w3, thesis], tasks }, W);

@@ -30,7 +30,6 @@ form.card > h3 { margin: 0; }
 form.card > button.primary { grid-column: 1 / -1; margin: 0; }
 .seg { display: flex; gap: 16px; flex-wrap: wrap; }
 .seg label { color: var(--text); font-size: 1rem; }
-[data-kind=weekly] .only-budget, [data-kind=budget] .only-weekly { display: none; }
 
 .picker { display: flex; align-items: center; justify-content: space-between; text-align: center; margin-bottom: 8px; }
 .picker button { width: 44px; height: 44px; }

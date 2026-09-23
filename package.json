@@ -1,1 +1,20 @@
-{ "name": "timetester", "private": true, "type": "module", "scripts": { "start": "node server.js", "test": "node --test" } }
+{
+  "name": "timetester",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "server": "node server.js",
+    "build": "vite build",
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.1.1",
+    "vite": "^8.3.0"
+  }
+}

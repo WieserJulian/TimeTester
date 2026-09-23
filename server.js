@@ -6,8 +6,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const PORT = process.env.PORT || 8787;
-const DB_PATH = process.env.DB_PATH || '/data/timetester.db';
-const PUBLIC = path.join(path.dirname(fileURLToPath(import.meta.url)), 'public');
+const DB_PATH = process.env.DB_PATH || 'data/timetester.db';
+const PUBLIC = path.join(path.dirname(fileURLToPath(import.meta.url)), 'dist'); // built by `npm run build`
 
 mkdirSync(path.dirname(DB_PATH), { recursive: true });
 const db = new DatabaseSync(DB_PATH);
@@ -151,7 +151,9 @@ async function serveStatic(url, res) {
   if (!file.startsWith(PUBLIC + path.sep)) throw new HttpError(403, 'forbidden');
   try {
     const data = await readFile(file);
-    res.writeHead(200, { 'content-type': TYPES[path.extname(file)] || 'application/octet-stream', 'cache-control': 'no-cache' }).end(data);
+    // Vite puts content-hashed files in /assets/, so those never change under the same name
+    const cache = rel.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache';
+    res.writeHead(200, { 'content-type': TYPES[path.extname(file)] || 'application/octet-stream', 'cache-control': cache }).end(data);
   } catch { throw new HttpError(404, 'not found'); }
 }
 

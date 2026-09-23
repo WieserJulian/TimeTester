@@ -1,6 +1,6 @@
 # Time Tester — Architecture & Build Plan
 
-Build spec for the goal in `README.md`. Build it **in the order of the steps below** and keep it small: no frameworks and no build step unless a step says otherwise.
+Build spec for the goal in `README.md`. Keep it small. The frontend is React (Vite build); the server stays dependency-free.
 
 ## Decisions (fixed)
 
@@ -11,9 +11,9 @@ Build spec for the goal in `README.md`. Build it **in the order of the steps bel
 | HTTPS | `tailscale serve` on the host → `https://<host>.<tailnet>.ts.net` | A PWA's service worker and install only work over HTTPS |
 | Android | Installable PWA (manifest + service worker) | One codebase, no app store |
 | Backend | Node 24, `node:http` + built-in `node:sqlite` | **Zero npm dependencies** |
-| Frontend | Plain HTML + CSS + vanilla JS ES modules, served as static files | Small UI (4 views). No bundler |
-| Storage | SQLite file in a Docker volume at `/data/timetester.db` | A single file is easy to back up |
-| Calculation | A pure module `public/planner.js`, run in the browser | Easy to test. The data is small enough to load all of it |
+| Frontend | React 19 + Vite, plain JSX and CSS. `vite build` → `dist/`, which `server.js` serves | Components are easier to change than string templates. The build only runs in Docker's build stage; the runtime image has no `node_modules` |
+| Storage | SQLite file in a Docker volume at `/data/timetester.db` (`./data/` when run locally) | A single file is easy to back up |
+| Calculation | A pure module `src/planner.js`, run in the browser | Easy to test. The data is small enough to load all of it |
 | Offline | The service worker caches only the app shell. Saving data needs a connection | Avoids having to handle sync conflicts |
 
 ## Domain model
@@ -28,7 +28,11 @@ Build spec for the goal in `README.md`. Build it **in the order of the steps bel
 2. `budget`: a total number of hours with a `deadline` and an optional `start_date`.
    - "Thesis, 100h, due 2026-12-20".
 
+A weekly project may also have `days` (`'1,2,3'` = Mon–Wed). The Plan view then spreads `hours_per_week` evenly over those days.
+
 **Log entry**: hours actually spent on a project on a given date.
+
+**Task**: a planned block of hours on a given date, optionally tied to a project. Marking it done logs its hours to that project and deletes the task.
 
 ### Rules for the weekly calculation (`planner.js`)
 
@@ -55,7 +59,9 @@ computeWeek({ pensum, projects, logs }, weekStart) → {
 }
 ```
 
-Also export the date helpers `mondayOf(dateStr)` and `addDays(dateStr, n)`.
+Also export the date helpers `mondayOf(dateStr)`, `addDays(dateStr, n)` and `today()`, plus
+`planWeek({ projects, tasks }, weekStart) → { days: [{ date, fixed, tasks, hours }], planned: { [project_id]: hours } }`
+for the Plan view (`required - planned` = still to schedule).
 
 ### Worked example (use this as a test case)
 
@@ -79,6 +85,7 @@ CREATE TABLE IF NOT EXISTS projects (
   start_date TEXT,              -- optional, both kinds
   end_date TEXT,                -- weekly: optional end; budget: required deadline
   archived INTEGER NOT NULL DEFAULT 0,
+  days TEXT,                    -- weekly: optional '1,2,3' (Mon=1); added by migration on startup
   CHECK (kind <> 'weekly' OR hours_per_week > 0),
   CHECK (kind <> 'budget' OR (total_hours > 0 AND end_date IS NOT NULL))
 );
@@ -89,63 +96,74 @@ CREATE TABLE IF NOT EXISTS logs (
   hours REAL NOT NULL CHECK (hours > 0),
   note TEXT
 );
+CREATE TABLE IF NOT EXISTS tasks (
+  id INTEGER PRIMARY KEY,
+  project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  date TEXT NOT NULL,
+  hours REAL NOT NULL CHECK (hours > 0)
+);
 PRAGMA foreign_keys = ON;
 ```
 
 The default pensum is 60 if the setting is missing.
 
-## API (JSON; the server also serves `public/` as static files)
+## API (JSON; the server also serves the built `dist/` as static files)
 
 | Method | Path | Body / notes |
 |---|---|---|
-| GET | `/api/state` | `{ pensum, projects, logs }`. The frontend loads everything with this one call |
+| GET | `/api/state` | `{ pensum, projects, logs, tasks }`. The frontend loads everything with this one call |
 | PUT | `/api/settings` | `{ pensum }` |
 | POST | `/api/projects` | project fields → the created row |
 | PUT | `/api/projects/:id` | project fields |
 | DELETE | `/api/projects/:id` | cascades to its logs. Archiving instead is done with PUT `archived: 1` |
 | POST | `/api/logs` | `{ project_id, date, hours, note? }` |
 | DELETE | `/api/logs/:id` | |
+| POST | `/api/tasks` | `{ title, date, hours, project_id? }` |
+| DELETE | `/api/tasks/:id` | |
 
 Validate every request body on the server (types, `kind`, dates matching `^\d{4}-\d{2}-\d{2}$`, positive numbers) and return `400 { error }` if it's invalid. Rely on the SQL CHECKs as a second layer. Always use prepared statements.
 
 ## Files
 
 ```
-server.js                 # ~150 lines: static files + API + schema
-public/index.html         # the shell, 4 views switched by #hash
-public/app.js             # fetches /api/state, renders, handles forms
-public/planner.js         # pure calculation (see above)
-public/style.css          # mobile-first
-public/manifest.webmanifest
-public/sw.js              # caches the app shell; /api/* always goes to the network
-public/icon-192.png, icon-512.png
+server.js                 # ~175 lines: static files from dist/ + API + schema. No npm deps
+index.html                # Vite entry, mounts src/main.jsx
+vite.config.js            # React plugin; dev server proxies /api to :8787
+src/main.jsx              # mounts <App>, registers the service worker (production only)
+src/App.jsx               # the tab list (VIEWS), #hash routing, shared state via useApp()
+src/views/*.jsx           # Week, Plan, Projects, Log, Settings
+src/planner.js            # pure calculation (see above)
+src/api.js, src/format.js # fetch wrapper; hour/date formatting
+src/style.css             # mobile-first
+public/                   # copied as-is into dist/: manifest, sw.js, icons
 planner.test.js           # node --test, includes the worked example
-Dockerfile
+Dockerfile                # build stage (npm ci, test, vite build) → slim runtime stage
 deploy/compose.yaml, .env.example, README.md   # server deploy (Watchtower + GHCR image)
 ```
+
+### Frontend conventions
+
+- `useApp()` gives every view `{ state, weekStart, setWeekStart, run, submit }`.
+- Writes go through `run(fn, okMsg?)`: it calls the API, reloads `/api/state`, and shows errors as a toast. No per-view caching; reloading everything is fine at this data size.
+- Simple forms are uncontrolled: `onSubmit={submit((formData) => api(...), afterSuccess)}`. The project form is controlled because it drives the live preview.
+- Local UI state (which form is open) lives in the view; switching tabs remounts the view and closes it.
 
 ## Views
 
 1. **Week** (`#week`, the default): a week picker (◀ this week ▶), a bar comparing committed and logged hours against the pensum, the free hours, and a red banner if overbooked. Each project gets a row with color, name, required, logged and left, plus an "overdue" badge. Tapping a row opens a quick-log form for that project with today's date.
 2. **Projects** (`#projects`): a list plus an add/edit form. A toggle between weekly and budget shows the right fields. Archive and delete actions. **Show a live preview** of this week's committed/free hours as you type, using `computeWeek` with the draft project included. This is how you answer "do I still have time for this?"
-3. **Log** (`#log`): an add-entry form (project, date defaulting to today, hours, note) and the last 50 entries with delete.
-4. **Settings** (`#settings`): the pensum.
+3. **Plan** (`#plan`): the week as 7 day cards. Weekly projects with `days` show as fixed blocks; `+` adds a task to a day; ✓ logs a task's hours and removes it. Below: "Still to schedule" per project (`required - planned`).
+4. **Log** (`#log`): an add-entry form (project, date defaulting to today, hours, note) and the last 50 entries with delete.
+5. **Settings** (`#settings`): the pensum.
 
-## Build steps (for Sonnet)
+## Build & run
 
-1. **planner.js + planner.test.js**: implement the rules above. `node --test` must pass the worked example and these cases: a weekly project outside its dates, a budget project before its start, an overdue budget project, and the deadline falling in the current week (weeksLeft = 1).
-2. **server.js**: schema, the API, and static files from `public/`. Port from `PORT` (default 8787), database path from `DB_PATH` (default `/data/timetester.db`). Check it with curl.
-3. **Frontend**: index.html, app.js and style.css with the 4 views. It must work at 400px width.
-4. **PWA**: manifest (`display: standalone`, icons, theme color) and sw.js. Check it in Chrome DevTools → Application.
-5. **Docker**:
-   ```dockerfile
-   FROM node:24-alpine
-   WORKDIR /app
-   COPY . .
-   ENV DB_PATH=/data/timetester.db
-   EXPOSE 8787
-   CMD ["node", "server.js"]
-   ```
+1. **Tests**: `npm test` must pass the worked example and these cases: a weekly project outside its dates, a budget project before its start, an overdue budget project, and the deadline falling in the current week (weeksLeft = 1).
+2. **Server**: port from `PORT` (default 8787), database path from `DB_PATH` (default `data/timetester.db`; the Docker image sets `/data/timetester.db`).
+3. **Frontend**: `npm run dev` for hot reload, `npm run build` for `dist/`. It must work at 400px width.
+4. **PWA**: manifest (`display: standalone`, icons, theme color) and sw.js. Check it in Chrome DevTools → Application. Bump `CACHE` in `sw.js` when you change its file list.
+5. **Docker**: see `Dockerfile` (multi-stage; tests run during the build). Minimal local compose:
    ```yaml
    services:
      timetester:
@@ -170,7 +188,7 @@ A PWA works through Access: the login is a cookie, and once it expires the app a
 ## Deliberately skipped (add when needed)
 
 - Queuing writes while offline: add if you often log hours without a connection.
-- Hours that differ per weekday or a calendar/time-block schedule: add if a weekly total turns out not to be enough.
+- Different hours per weekday (today `days` splits evenly) or clock-time blocks: add if the Plan view isn't enough.
 - Prorating partial weeks for weekly projects: add if the first and last weeks look wrong.
 - A multi-week forecast view: `computeWeek` in a loop over the next N weeks, which is about 20 lines, if you want it.
 - Backups: copy `./data/timetester.db` using the host's existing backup tool.
