@@ -16,7 +16,7 @@ services:
     environment:
       WATCHTOWER_LABEL_ENABLE: "true"
       WATCHTOWER_CLEANUP: "true"
-      WATCHTOWER_POLL_INTERVAL: "300"
+      WATCHTOWER_POLL_INTERVAL: "120"
 
   # Optional public URL via Cloudflare Tunnel: `docker compose --profile tunnel up -d`.
   # Needs TUNNEL_TOKEN in .env, and a Cloudflare Access policy in front (the app has no login).
