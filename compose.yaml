@@ -1,0 +1,29 @@
+services:
+  timetester:
+    image: ghcr.io/OWNER/timetester:latest   # lowercase GitHub user/repo
+    labels: ["com.centurylinklabs.watchtower.enable=true"]
+    restart: unless-stopped
+    ports: ["127.0.0.1:8787:8787"]   # localhost only; Tailscale / cloudflared expose it
+    volumes: ["./data:/data"]
+
+  # Pulls the new image after each push to main. Auth: `docker login ghcr.io` on the server first.
+  watchtower:
+    image: nickfedor/watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ~/.docker/config.json:/config.json:ro
+    environment:
+      WATCHTOWER_LABEL_ENABLE: "true"
+      WATCHTOWER_CLEANUP: "true"
+      WATCHTOWER_POLL_INTERVAL: "300"
+
+  # Optional public URL via Cloudflare Tunnel: `docker compose --profile tunnel up -d`.
+  # Needs TUNNEL_TOKEN in .env, and a Cloudflare Access policy in front (the app has no login).
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    profiles: ["tunnel"]
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment: ["TUNNEL_TOKEN=${TUNNEL_TOKEN}"]
+    depends_on: [timetester]
