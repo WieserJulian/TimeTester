@@ -121,7 +121,7 @@ public/sw.js              # caches the app shell; /api/* always goes to the netw
 public/icon-192.png, icon-512.png
 planner.test.js           # node --test, includes the worked example
 Dockerfile
-compose.yaml
+deploy/compose.yaml, .env.example, README.md   # server deploy (Watchtower + GHCR image)
 ```
 
 ## Views
@@ -163,7 +163,7 @@ The app has **no login**, so a public URL must sit behind Cloudflare Access. Do 
 1. Cloudflare dashboard → Zero Trust → Networks → Tunnels → create a tunnel (Docker) and copy its token into `.env` as `TUNNEL_TOKEN=...` (`.env` is in `.dockerignore`, so it stays out of the image).
 2. Zero Trust → Access → Applications → add a self-hosted app for `timetester.<your-domain>`, with a policy that allows only your email address (one-time PIN login; free for up to 50 users).
 3. In the tunnel, add a public hostname `timetester.<your-domain>` pointing to the service `http://timetester:8787`.
-4. `docker compose --profile tunnel up -d --build`. Open the URL, log in once and add it to your home screen.
+4. `cd deploy && docker compose --profile tunnel up -d` (see `deploy/README.md`). Open the URL, log in once and add it to your home screen.
 
 A PWA works through Access: the login is a cookie, and once it expires the app asks you to log in again.
 

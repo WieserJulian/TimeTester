@@ -1,6 +1,6 @@
 services:
   timetester:
-    image: ghcr.io/OWNER/timetester:latest   # lowercase GitHub user/repo
+    image: ghcr.io/OWNER/REPO:${TAG:-latest}   # lowercase GitHub user/repo
     labels: ["com.centurylinklabs.watchtower.enable=true"]
     restart: unless-stopped
     ports: ["127.0.0.1:8787:8787"]   # localhost only; Tailscale / cloudflared expose it
@@ -12,7 +12,7 @@ services:
     restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ~/.docker/config.json:/config.json:ro
+      - ${HOME}/.docker/config.json:/config.json:ro
     environment:
       WATCHTOWER_LABEL_ENABLE: "true"
       WATCHTOWER_CLEANUP: "true"
