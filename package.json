@@ -1,1 +1,26 @@
-{ "name": "timetester", "private": true, "type": "module", "scripts": { "start": "node server.js", "test": "node --test" } }
+{
+  "name": "timetester",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.18" },
+  "scripts": {
+    "dev": "vite",
+    "server": "node server.ts",
+    "build": "vite build && vite build -c vite.sw.config.ts",
+    "start": "node server.ts",
+    "check": "tsc -p . && tsc -p tsconfig.sw.json",
+    "test": "node --test *.test.ts"
+  },
+  "dependencies": {
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.0"
+  }
+}
