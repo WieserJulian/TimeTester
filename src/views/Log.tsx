@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { useApp } from '../App.tsx';
 import { api, downloadCsv } from '../api.ts';
 import { today } from '../planner.ts';
-import { h, dl, str } from '../format.ts';
+import { h, dl, str, parseHours } from '../format.ts';
+import { HoursInput } from '../HoursInput.tsx';
 import type { Log as LogEntry, Project } from '../types.ts';
 
 // Active projects, plus `keep` even if archived, so editing an old entry doesn't silently switch its project.
@@ -13,7 +14,7 @@ export const ProjectOptions = ({ projects, keep }: { projects: Project[]; keep?:
 export function LogForm({ projectId, log, onDone }: { projectId?: number; log?: LogEntry; onDone?: () => void }) {
   const { state, submit } = useApp();
   const save = (f: FormData) => {
-    const body = { project_id: projectId ?? Number(f.get('project_id')), date: str(f, 'date'), hours: Number(f.get('hours')), note: str(f, 'note') };
+    const body = { project_id: projectId ?? Number(f.get('project_id')), date: str(f, 'date'), hours: parseHours(str(f, 'hours')), note: str(f, 'note') };
     return log ? api('PUT', `/api/logs/${log.id}`, body) : api('POST', '/api/logs', body);
   };
   return (
@@ -23,7 +24,7 @@ export function LogForm({ projectId, log, onDone }: { projectId?: number; log?: 
           <select name="project_id" required defaultValue={log?.project_id}><ProjectOptions projects={state.projects} keep={log?.project_id} /></select>
         </label>
       )}
-      <label>Hours <input name="hours" type="number" step="0.25" min="0.25" inputMode="decimal" required autoFocus={!!(projectId || log)} defaultValue={log?.hours} /></label>
+      <label>Hours <HoursInput autoFocus={!!(projectId || log)} value={log?.hours} /></label>
       <label>Date <input name="date" type="date" defaultValue={log?.date ?? today()} required /></label>
       <label className="wide">Note <input name="note" maxLength={500} defaultValue={log?.note ?? ''} /></label>
       <div className="actions wide">
