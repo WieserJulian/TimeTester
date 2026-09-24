@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { useApp } from './App.tsx';
 import { api } from './api.ts';
 import { dateOf } from './planner.ts';
-import { h } from './format.ts';
+import { h, parseHours } from './format.ts';
+import { HoursInput } from './HoursInput.tsx';
 import type { State, Timer } from './types.ts';
 
 const LONG = 8; // hours: a timer this long was probably forgotten, so ask before logging it
@@ -44,9 +45,9 @@ export function TimerBar() {
         <button onClick={() => undoable('Timer', () => api('DELETE', '/api/timer'), () => api('PUT', '/api/timer', t))} aria-label="Discard timer">✕</button>
       </div>
       {asking && (
-        <form className="quick" onSubmit={(e) => { e.preventDefault(); stop(Number(new FormData(e.currentTarget).get('hours'))); }}>
+        <form className="quick" onSubmit={(e) => { e.preventDefault(); stop(parseHours(String(new FormData(e.currentTarget).get('hours')))!); }}>
           <span className="wide">The timer ran {h(hours)}. Did you forget to stop it? Log how many hours?</span>
-          <label>Hours <input name="hours" type="number" step="0.25" min="0.25" max={hours} inputMode="decimal" defaultValue={Math.min(hours, LONG)} required autoFocus /></label>
+          <label>Hours <HoursInput max={hours} value={Math.min(hours, LONG)} autoFocus /></label>
           <button className="primary">Log</button>
         </form>
       )}

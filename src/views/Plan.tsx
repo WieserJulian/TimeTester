@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { useApp } from '../App.tsx';
 import { api } from '../api.ts';
 import { autoPlan, computeWeek, planWeek, nextOccurrence, addDays, today, type PlanTask } from '../planner.ts';
-import { h, dday, str, weekdayName } from '../format.ts';
+import { h, dday, str, weekdayName, parseHours } from '../format.ts';
+import { HoursInput } from '../HoursInput.tsx';
 import type { Task } from '../types.ts';
 import { WeekPicker } from './Week.tsx';
 import { ProjectOptions } from './Log.tsx';
@@ -14,7 +15,7 @@ function TaskForm({ date, task, onDone }: { date: string; task?: Task; onDone: (
   const { state, submit } = useApp();
   const save = (f: FormData) => {
     const body = {
-      title: str(f, 'title'), date: str(f, 'date'), hours: Number(f.get('hours')), note: str(f, 'note'),
+      title: str(f, 'title'), date: str(f, 'date'), hours: parseHours(str(f, 'hours')), note: str(f, 'note'),
       project_id: f.get('project_id') ? Number(f.get('project_id')) : null, repeat: str(f, 'repeat') || null,
     };
     return task ? api('PUT', `/api/tasks/${task.id}`, body) : api('POST', '/api/tasks', body);
@@ -22,7 +23,7 @@ function TaskForm({ date, task, onDone }: { date: string; task?: Task; onDone: (
   return (
     <form className="quick" onSubmit={submit(save, onDone)}>
       <label className="wide">Task <input name="title" required maxLength={200} autoFocus defaultValue={task?.title} /></label>
-      <label>Hours <input name="hours" type="number" step="0.25" min="0.25" inputMode="decimal" required defaultValue={task?.hours} /></label>
+      <label>Hours <HoursInput value={task?.hours} /></label>
       <label>Project
         <select name="project_id" defaultValue={task?.project_id ?? ''}><option value="">–</option><ProjectOptions projects={state.projects} keep={task?.project_id} /></select>
       </label>
