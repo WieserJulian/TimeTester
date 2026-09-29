@@ -38,4 +38,9 @@ export const joinRanges = (spans: Span[]) => spans.map((r) => `${r.from}-${r.to}
 export const showRanges = (s: string | null | undefined) => parseRanges(s).map((r) => `${r.from}–${r.to}`).join(', ');
 const mins = (t: string) => +t.slice(0, 2) * 60 + +t.slice(3, 5);
 // Hours across the spans; incomplete or backwards spans count as 0 (the server rejects them on save).
-export const spansHours = (spans: Span[]) => spans.reduce((a, r) => a + (r.from && r.to && mins(r.to) > mins(r.from) ? mins(r.to) - mins(r.from) : 0), 0) / 60;
+const ok = (r: Span) => !!(r.from && r.to && mins(r.to) > mins(r.from));
+export const spansHours = (spans: Span[]) => spans.reduce((a, r) => a + (ok(r) ? mins(r.to) - mins(r.from) : 0), 0) / 60;
+// Per span: '' or why the server would reject it (same rules as cleanRanges in server.ts).
+export const spanErrors = (spans: Span[]) => spans.map((r, i) => !r.from || !r.to ? ''
+  : !ok(r) ? 'To must be after From'
+  : spans.some((o, j) => j !== i && ok(o) && mins(r.from) < mins(o.to) && mins(o.from) < mins(r.to)) ? 'Overlaps another range' : '');

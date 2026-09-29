@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseHours, hoursInput } from './src/format.ts';
+import { parseHours, hoursInput, spanErrors, spansHours } from './src/format.ts';
 
 test('parseHours accepts decimal, clock and unit forms', () => {
   const near = (s: string, v: number) => assert.ok(Math.abs(parseHours(s)! - v) < 1e-3, `${s} -> ${parseHours(s)}`);
@@ -16,4 +16,13 @@ test('hoursInput round-trips', () => {
   assert.equal(hoursInput(9 + 10 / 60), '9:10');
   assert.equal(hoursInput(undefined), '');
   for (const n of [9 + 10 / 60, 0.3, 7.77, 2.25]) assert.ok(Math.abs(parseHours(hoursInput(n))! - n) < 1 / 120);
+});
+
+test('spanErrors flags backwards and overlapping ranges, not unfinished ones', () => {
+  const s = (a: string) => a.split(',').map((r) => { const [from, to] = r.split('-'); return { from, to }; });
+  assert.deepEqual(spanErrors(s('09:00-12:00,13:00-17:30')), ['', '']);
+  assert.deepEqual(spanErrors(s('09:00-12:00,12:00-13:00')), ['', '']); // touching is fine
+  assert.deepEqual(spanErrors(s('10:00-09:00,09:00-09:00')), ['To must be after From', 'To must be after From']);
+  assert.deepEqual(spanErrors(s('09:00-12:00,11:00-13:00,14:00-')), ['Overlaps another range', 'Overlaps another range', '']);
+  assert.equal(spansHours(s('09:00-12:00,13:00-17:30,10:00-09:00')), 7.5);
 });

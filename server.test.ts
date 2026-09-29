@@ -64,6 +64,12 @@ test('create, edit, delete; deleting a project cascades to its logs and tasks', 
   const cleared = await call('PUT', `/api/logs/${r.data.id}`, { ranges: null, hours: 2 });
   assert.equal(cleared.data.ranges, null);
   assert.equal(cleared.data.hours, 2);
+  await call('PUT', `/api/logs/${r.data.id}`, { ranges: '09:00-10:00' });
+  const hoursOnly = await call('PUT', `/api/logs/${r.data.id}`, { hours: 3 }); // new hours win over old ranges
+  assert.equal(hoursOnly.data.ranges, null);
+  assert.equal(hoursOnly.data.hours, 3);
+  const noteOnly = await call('PUT', `/api/logs/${r.data.id}`, { note: 'x' });
+  assert.equal(noteOnly.data.hours, 3);
 
   const archived = await call('PUT', `/api/projects/${p.id}`, { archived: 1 });
   assert.equal(archived.data.archived, 1);

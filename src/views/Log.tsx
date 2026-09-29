@@ -2,19 +2,23 @@ import { useState } from 'react';
 import { useApp } from '../App.tsx';
 import { api, downloadCsv } from '../api.ts';
 import { today } from '../planner.ts';
-import { h, dl, str, parseHours, parseRanges, joinRanges, showRanges, spansHours, hoursInput } from '../format.ts';
+import { h, dl, str, parseHours, parseRanges, joinRanges, showRanges, spansHours, spanErrors, hoursInput } from '../format.ts';
 import { HoursInput } from '../HoursInput.tsx';
 import type { Log as LogEntry, Project } from '../types.ts';
 
 // Active projects, plus `keep` even if archived, so editing an old entry doesn't silently switch its project.
+export let nextKey = 0; // stable React keys for from/to rows
+const row = (r: { from: string; to: string }) => ({ ...r, key: nextKey++ });
+
 export const ProjectOptions = ({ projects, keep }: { projects: Project[]; keep?: number | null }) =>
   projects.filter((p) => !p.archived || p.id === keep).map((p) => <option key={p.id} value={p.id}>{p.name}</option>);
 
 // projectId: quick-log on the Week view (project fixed). log: edit an entry. Neither: new entry with a project picker.
 export function LogForm({ projectId, log, onDone }: { projectId?: number; log?: LogEntry; onDone?: () => void }) {
   const { state, submit } = useApp();
-  const [spans, setSpans] = useState(() => parseRanges(log?.ranges)); // from/to rows; with any, the total is their sum
+  const [spans, setSpans] = useState(() => parseRanges(log?.ranges).map(row)); // from/to rows; with any, the total is their sum
   const setSpan = (i: number, k: 'from' | 'to') => (e: { target: { value: string } }) => setSpans(spans.map((s, j) => (j === i ? { ...s, [k]: e.target.value } : s)));
+  const errors = spanErrors(spans);
   const save = (f: FormData) => {
     const body = { project_id: projectId ?? Number(f.get('project_id')), date: str(f, 'date'), note: str(f, 'note'),
       ...(spans.length ? { ranges: joinRanges(spans) } : { ranges: null, hours: parseHours(str(f, 'hours')) }) };
@@ -33,13 +37,14 @@ export function LogForm({ projectId, log, onDone }: { projectId?: number; log?: 
       {!projectId && (
         <div className="wide">
           {spans.map((r, i) => (
-            <div key={i} className="actions">
+            <div key={r.key} className="actions">
               <label>From <input type="time" value={r.from} onChange={setSpan(i, 'from')} required /></label>
-              <label>To <input type="time" value={r.to} onChange={setSpan(i, 'to')} required /></label>
+              <label>To <input type="time" value={r.to} onChange={setSpan(i, 'to')} required ref={(el) => el?.setCustomValidity(errors[i])} /></label>
               <button type="button" className="danger" aria-label="Remove range" onClick={() => setSpans(spans.filter((_, j) => j !== i))}>✕</button>
+              {errors[i] && <small>{errors[i]}</small>}
             </div>
           ))}
-          <button type="button" onClick={() => setSpans([...spans, { from: '', to: '' }])}>+ Add from–to</button>
+          <button type="button" onClick={() => setSpans([...spans, row({ from: '', to: '' })])}>+ Add from–to</button>
         </div>
       )}
       <label className="wide">Note <input name="note" maxLength={500} defaultValue={log?.note ?? ''} /></label>

@@ -281,7 +281,11 @@ async function api(method: string, parts: string[], body: Body) {
     if (method === 'POST') return t.get.get(t.add.run(...t.clean(body)).lastInsertRowid);
     const existing = Number.isInteger(id) && t.get.get(id);
     if (!existing) throw new HttpError(404, 'not found');
-    if (method === 'PUT') { t.set.run(...t.clean({ ...existing, ...body }), id); return t.get.get(id); }
+    if (method === 'PUT') {
+      // a log's total comes from its ranges, so new hours without new ranges drop the old ranges
+      const merged = { ...existing, ...body, ...(res === 'logs' && 'hours' in body && !('ranges' in body) ? { ranges: null } : {}) };
+      t.set.run(...t.clean(merged), id); return t.get.get(id);
+    }
     if (method === 'DELETE') { t.del.run(id); return { ok: true }; }
   }
   throw new HttpError(404, 'not found');
