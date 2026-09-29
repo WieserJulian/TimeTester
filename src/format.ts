@@ -30,3 +30,12 @@ export function hoursInput(n: number | null | undefined) {
   const min = Math.round(n * 60);
   return `${Math.floor(min / 60)}:${String(min % 60).padStart(2, '0')}`;
 }
+
+// Log time spans are stored as '09:00-12:00,13:00-17:30'.
+export type Span = { from: string; to: string };
+export const parseRanges = (s: string | null | undefined): Span[] => (s ? s.split(',').map((r) => { const [from, to] = r.split('-'); return { from, to }; }) : []);
+export const joinRanges = (spans: Span[]) => spans.map((r) => `${r.from}-${r.to}`).join(',');
+export const showRanges = (s: string | null | undefined) => parseRanges(s).map((r) => `${r.from}–${r.to}`).join(', ');
+const mins = (t: string) => +t.slice(0, 2) * 60 + +t.slice(3, 5);
+// Hours across the spans; incomplete or backwards spans count as 0 (the server rejects them on save).
+export const spansHours = (spans: Span[]) => spans.reduce((a, r) => a + (r.from && r.to && mins(r.to) > mins(r.from) ? mins(r.to) - mins(r.from) : 0), 0) / 60;

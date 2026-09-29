@@ -56,6 +56,15 @@ test('create, edit, delete; deleting a project cascades to its logs and tasks', 
   assert.equal(t2.data.date, '2026-09-23');
   assert.equal((await call('PUT', `/api/logs/${l.id}`, { hours: 0 })).status, 400);
 
+  const r = await call('POST', '/api/logs', { project_id: p.id, date: '2026-09-21', hours: 99, ranges: '13:00-17:30,09:00-12:00' });
+  assert.equal(r.data.ranges, '09:00-12:00,13:00-17:30'); // sorted
+  assert.equal(r.data.hours, 7.5); // total is the sum of the ranges
+  for (const ranges of ['09:00-08:00', '09:00-09:00', '9:00-10:00', '09:00-12:00,11:00-13:00', '09:00', 5])
+    assert.equal((await call('POST', '/api/logs', { project_id: p.id, date: '2026-09-21', ranges })).status, 400, String(ranges));
+  const cleared = await call('PUT', `/api/logs/${r.data.id}`, { ranges: null, hours: 2 });
+  assert.equal(cleared.data.ranges, null);
+  assert.equal(cleared.data.hours, 2);
+
   const archived = await call('PUT', `/api/projects/${p.id}`, { archived: 1 });
   assert.equal(archived.data.archived, 1);
   assert.equal(archived.data.total_hours, 100);

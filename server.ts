@@ -53,6 +53,7 @@ const addColumn = (table: string, col: string, type: string) => {
   if (!db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`);
 };
 addColumn('projects', 'days', 'TEXT'); // weekdays a weekly project runs on, '1,2,3' = Mon-Wed
+addColumn('logs', 'ranges', 'TEXT'); // time spans of the entry, '09:00-12:00,13:00-17:30'
 addColumn('tasks', 'note', 'TEXT');
 addColumn('tasks', 'repeat', "TEXT CHECK (repeat IN ('daily','weekdays','weekly'))");
 
@@ -68,8 +69,8 @@ const q = {
   delProject: db.prepare('DELETE FROM projects WHERE id = ?'),
   logs: db.prepare('SELECT * FROM logs ORDER BY date DESC, id DESC'),
   log: db.prepare('SELECT * FROM logs WHERE id = ?'),
-  addLog: db.prepare('INSERT INTO logs (project_id, date, hours, note) VALUES (?,?,?,?)'),
-  setLog: db.prepare('UPDATE logs SET project_id=?, date=?, hours=?, note=? WHERE id=?'),
+  addLog: db.prepare('INSERT INTO logs (project_id, date, hours, note, ranges) VALUES (?,?,?,?,?)'),
+  setLog: db.prepare('UPDATE logs SET project_id=?, date=?, hours=?, note=?, ranges=? WHERE id=?'),
   delLog: db.prepare('DELETE FROM logs WHERE id = ?'),
   tasks: db.prepare('SELECT * FROM tasks ORDER BY date, id'),
   task: db.prepare('SELECT * FROM tasks WHERE id = ?'),
@@ -81,7 +82,7 @@ const q = {
   delOverride: db.prepare('DELETE FROM day_overrides WHERE date = ?'),
   // restore from a backup keeps the ids, so logs/tasks still point at their projects
   importProject: db.prepare(`INSERT INTO projects (${PROJECT_COLS}, id) VALUES (?,?,?,?,?,?,?,?,?,?)`),
-  importLog: db.prepare('INSERT INTO logs (project_id, date, hours, note, id) VALUES (?,?,?,?,?)'),
+  importLog: db.prepare('INSERT INTO logs (project_id, date, hours, note, ranges, id) VALUES (?,?,?,?,?,?)'),
   importTask: db.prepare('INSERT INTO tasks (project_id, title, date, hours, note, repeat, id) VALUES (?,?,?,?,?,?,?)'),
 };
 
@@ -121,11 +122,29 @@ function cleanProject(b: Body): Params {
   return [b.name.trim(), color, b.kind, hpw, total, start, end, b.archived ?? 0, days];
 }
 
+// '09:00-12:00,13:00-17:30' → sorted, non-overlapping spans and their total hours. null/'' = no spans.
+const TIME = /^([01]\d|2[0-3]):([0-5]\d)$/;
+const mins = (t: string) => +t.slice(0, 2) * 60 + +t.slice(3);
+function cleanRanges(v: unknown): { ranges: string | null; hours: number | null } {
+  if (v == null || v === '') return { ranges: null, hours: null };
+  if (typeof v !== 'string') bad('ranges must be a string like 09:00-12:00,13:00-17:30');
+  const spans = (v as string).split(',').map((r) => {
+    const [from, to, extra] = r.split('-');
+    if (extra !== undefined || !TIME.test(from ?? '') || !TIME.test(to ?? '')) bad('each range must look like 09:00-12:00');
+    if (mins(to) <= mins(from)) bad('each range must end after it starts');
+    return [from, to];
+  }).sort((a, b) => mins(a[0]) - mins(b[0]));
+  for (let i = 1; i < spans.length; i++) if (mins(spans[i][0]) < mins(spans[i - 1][1])) bad('ranges must not overlap');
+  const total = spans.reduce((a, [f, t]) => a + mins(t) - mins(f), 0);
+  return { ranges: spans.map((s) => s.join('-')).join(','), hours: Math.round((total / 60) * 1e4) / 1e4 };
+}
+
 function cleanLog(b: Body): Params {
   if (!Number.isInteger(b.project_id)) bad('project_id required');
   if (!isDate(b.date)) bad('date must be YYYY-MM-DD');
-  if (!isPos(b.hours)) bad('hours must be > 0');
-  return [b.project_id, b.date, b.hours, optText(b.note, 'note')];
+  const { ranges, hours } = cleanRanges(b.ranges); // with ranges, the total is their sum
+  if (!isPos(hours ?? b.hours)) bad('hours must be > 0');
+  return [b.project_id, b.date, hours ?? b.hours, optText(b.note, 'note'), ranges];
 }
 
 function cleanTask(b: Body): Params {
