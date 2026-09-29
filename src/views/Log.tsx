@@ -21,7 +21,7 @@ export function LogForm({ projectId, log, onDone }: { projectId?: number; log?: 
     return log ? api('PUT', `/api/logs/${log.id}`, body) : api('POST', '/api/logs', body);
   };
   return (
-    <form className={`card ${projectId || log ? 'quick' : ''}`} onSubmit={submit(save, onDone)}>
+    <form className={`card ${projectId || log ? 'quick' : ''}`} onSubmit={submit(save, () => { setSpans([]); onDone?.(); })}>
       {!projectId && (
         <label className="wide">Project
           <select name="project_id" required defaultValue={log?.project_id}><ProjectOptions projects={state.projects} keep={log?.project_id} /></select>
