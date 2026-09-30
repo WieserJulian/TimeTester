@@ -31,6 +31,9 @@ export function hoursInput(n: number | null | undefined) {
   return `${Math.floor(min / 60)}:${String(min % 60).padStart(2, '0')}`;
 }
 
+// Minutes as 'h:mm' (a break of 30 → '0:30').
+export const clockMin = (m: number) => `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`;
+
 // Log time spans are stored as '09:00-12:00,13:00-17:30'.
 export type Span = { from: string; to: string };
 export const parseRanges = (s: string | null | undefined): Span[] => (s ? s.split(',').map((r) => { const [from, to] = r.split('-'); return { from, to }; }) : []);

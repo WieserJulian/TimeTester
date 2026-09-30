@@ -71,6 +71,20 @@ test('create, edit, delete; deleting a project cascades to its logs and tasks', 
   const noteOnly = await call('PUT', `/api/logs/${r.data.id}`, { note: 'x' });
   assert.equal(noteOnly.data.hours, 3);
 
+  // break: stored hours are net; body hours/ranges are gross
+  const b1 = (await call('POST', '/api/logs', { project_id: p.id, date: '2026-09-21', hours: 8, break_minutes: 30 })).data;
+  assert.equal(b1.hours, 7.5); assert.equal(b1.break_minutes, 30);
+  assert.equal((await call('PUT', `/api/logs/${b1.id}`, { note: 'y' })).data.hours, 7.5); // untouched: no double subtraction
+  assert.equal((await call('PUT', `/api/logs/${b1.id}`, { break_minutes: 60 })).data.hours, 7); // gross 8 kept
+  const b2 = (await call('PUT', `/api/logs/${b1.id}`, { ranges: '09:00-17:30', break_minutes: 45 })).data;
+  assert.equal(b2.hours, 7.75);
+  assert.equal((await call('PUT', `/api/logs/${b1.id}`, { hours: 5 })).data.hours, 4.25); // new gross, old break kept
+  for (const break_minutes of [-1, 1.5, 'x', 1440, 300])
+    assert.equal((await call('POST', '/api/logs', { project_id: p.id, date: '2026-09-21', hours: 5, break_minutes })).status, 400, String(break_minutes));
+  const exp = (await call('GET', '/api/export')).data;
+  assert.equal((await call('POST', '/api/import', exp)).status, 200);
+  assert.equal((await call('GET', '/api/state')).data.logs.find((l: any) => l.id === b1.id).hours, 4.25); // restore keeps net
+
   const archived = await call('PUT', `/api/projects/${p.id}`, { archived: 1 });
   assert.equal(archived.data.archived, 1);
   assert.equal(archived.data.total_hours, 100);

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useApp } from '../App.tsx';
 import { api, downloadCsv } from '../api.ts';
 import { today } from '../planner.ts';
-import { h, dl, str, parseHours, parseRanges, joinRanges, showRanges, spansHours, spanErrors, hoursInput } from '../format.ts';
+import { h, dl, str, parseHours, parseRanges, joinRanges, showRanges, spansHours, spanErrors, hoursInput, clockMin } from '../format.ts';
 import { HoursInput } from '../HoursInput.tsx';
 import type { Log as LogEntry, Project } from '../types.ts';
 
@@ -18,9 +18,13 @@ export function LogForm({ projectId, log, onDone }: { projectId?: number; log?: 
   const { state, submit } = useApp();
   const [spans, setSpans] = useState(() => parseRanges(log?.ranges).map(row)); // from/to rows; with any, the total is their sum
   const setSpan = (i: number, k: 'from' | 'to') => (e: { target: { value: string } }) => setSpans(spans.map((s, j) => (j === i ? { ...s, [k]: e.target.value } : s)));
+  const [brk, setBrk] = useState(() => (log?.break_minutes ? clockMin(log.break_minutes) : '')); // rest time, hh:mm; '' = none
+  const brkH = brk.trim() ? parseHours(brk) : 0; // null = not a valid time
+  const brkMin = Math.round((brkH ?? 0) * 60);
   const errors = spanErrors(spans);
+  const gross = log ? Math.round((log.hours + log.break_minutes / 60) * 1e4) / 1e4 : undefined; // hours is stored net of the break
   const save = (f: FormData) => {
-    const body = { project_id: projectId ?? Number(f.get('project_id')), date: str(f, 'date'), note: str(f, 'note'),
+    const body = { project_id: projectId ?? Number(f.get('project_id')), date: str(f, 'date'), note: str(f, 'note'), break_minutes: brkMin,
       ...(spans.length ? { ranges: joinRanges(spans) } : { ranges: null, hours: parseHours(str(f, 'hours')) }) };
     return log ? api('PUT', `/api/logs/${log.id}`, body) : api('POST', '/api/logs', body);
   };
@@ -31,8 +35,10 @@ export function LogForm({ projectId, log, onDone }: { projectId?: number; log?: 
           <select name="project_id" required defaultValue={log?.project_id}><ProjectOptions projects={state.projects} keep={log?.project_id} /></select>
         </label>
       )}
-      {spans.length ? <label>Total hours <input value={hoursInput(Math.round(spansHours(spans) * 100) / 100) || '0'} readOnly tabIndex={-1} /></label>
-        : <label>Hours <HoursInput autoFocus={!!(projectId || log)} value={log?.hours} /></label>}
+      {spans.length ? <label>Total hours <input value={hoursInput(Math.max(0, Math.round((spansHours(spans) - brkMin / 60) * 100) / 100)) || '0'} readOnly tabIndex={-1} /></label>
+        : <label>Hours <HoursInput autoFocus={!!(projectId || log)} value={gross} /></label>}
+      <label>Break <input value={brk} onChange={(e) => setBrk(e.target.value)} inputMode="decimal" autoComplete="off" placeholder="e.g. 0:30"
+        ref={(el) => el?.setCustomValidity(brkH == null ? 'Enter a break like 0:30, 45m or 1h' : '')} /></label>
       <label>Date <input name="date" type="date" defaultValue={log?.date ?? today()} required /></label>
       {!projectId && (
         <div className="wide">
@@ -72,10 +78,10 @@ export default function Log() {
   const shown = all ? matches : matches.slice(0, SHOW);
   const total = matches.reduce((a, l) => a + l.hours, 0);
 
-  const csv = () => downloadCsv(`timetester-log-${today()}.csv`, [['date', 'project', 'hours', 'ranges', 'note'],
-    ...matches.map((l) => [l.date, byId[l.project_id]?.name ?? '', String(l.hours), showRanges(l.ranges), l.note ?? ''])]);
+  const csv = () => downloadCsv(`timetester-log-${today()}.csv`, [['date', 'project', 'hours', 'ranges', 'break', 'note'],
+    ...matches.map((l) => [l.date, byId[l.project_id]?.name ?? '', String(l.hours), showRanges(l.ranges), l.break_minutes ? clockMin(l.break_minutes) : '', l.note ?? ''])]);
   const del = (l: LogEntry) => undoable('Entry', () => api('DELETE', `/api/logs/${l.id}`),
-    () => api('POST', '/api/logs', { project_id: l.project_id, date: l.date, hours: l.hours, note: l.note, ranges: l.ranges }));
+    () => api('POST', '/api/logs', { project_id: l.project_id, date: l.date, hours: l.hours + l.break_minutes / 60, note: l.note, ranges: l.ranges, break_minutes: l.break_minutes }));
 
   return (
     <>
@@ -100,7 +106,7 @@ export default function Log() {
         const p = byId[l.project_id] ?? { name: '?', color: '#888' };
         return (
           <div key={l.id} className="card entry" style={{ '--c': p.color }}>
-            <div><b>{p.name}</b> · {h(l.hours)}<br /><small>{dl(l.date)}{l.ranges && ` · ${showRanges(l.ranges)}`}{l.note && ` · ${l.note}`}</small></div>
+            <div><b>{p.name}</b> · {h(l.hours)}<br /><small>{dl(l.date)}{l.ranges && ` · ${showRanges(l.ranges)}`}{l.break_minutes > 0 && ` · break ${clockMin(l.break_minutes)}`}{l.note && ` · ${l.note}`}</small></div>
             <div className="actions">
               <button onClick={() => setEditing(l.id)}>Edit</button>
               <button className="danger" onClick={() => del(l)} aria-label="Delete entry">✕</button>

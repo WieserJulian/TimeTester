@@ -54,6 +54,7 @@ const addColumn = (table: string, col: string, type: string) => {
 };
 addColumn('projects', 'days', 'TEXT'); // weekdays a weekly project runs on, '1,2,3' = Mon-Wed
 addColumn('logs', 'ranges', 'TEXT'); // time spans of the entry, '09:00-12:00,13:00-17:30'
+addColumn('logs', 'break_minutes', 'INTEGER NOT NULL DEFAULT 0'); // rest time (lunch) already subtracted from hours
 addColumn('tasks', 'note', 'TEXT');
 addColumn('tasks', 'repeat', "TEXT CHECK (repeat IN ('daily','weekdays','weekly'))");
 
@@ -69,8 +70,8 @@ const q = {
   delProject: db.prepare('DELETE FROM projects WHERE id = ?'),
   logs: db.prepare('SELECT * FROM logs ORDER BY date DESC, id DESC'),
   log: db.prepare('SELECT * FROM logs WHERE id = ?'),
-  addLog: db.prepare('INSERT INTO logs (project_id, date, hours, note, ranges) VALUES (?,?,?,?,?)'),
-  setLog: db.prepare('UPDATE logs SET project_id=?, date=?, hours=?, note=?, ranges=? WHERE id=?'),
+  addLog: db.prepare('INSERT INTO logs (project_id, date, hours, note, ranges, break_minutes) VALUES (?,?,?,?,?,?)'),
+  setLog: db.prepare('UPDATE logs SET project_id=?, date=?, hours=?, note=?, ranges=?, break_minutes=? WHERE id=?'),
   delLog: db.prepare('DELETE FROM logs WHERE id = ?'),
   tasks: db.prepare('SELECT * FROM tasks ORDER BY date, id'),
   task: db.prepare('SELECT * FROM tasks WHERE id = ?'),
@@ -82,7 +83,7 @@ const q = {
   delOverride: db.prepare('DELETE FROM day_overrides WHERE date = ?'),
   // restore from a backup keeps the ids, so logs/tasks still point at their projects
   importProject: db.prepare(`INSERT INTO projects (${PROJECT_COLS}, id) VALUES (?,?,?,?,?,?,?,?,?,?)`),
-  importLog: db.prepare('INSERT INTO logs (project_id, date, hours, note, ranges, id) VALUES (?,?,?,?,?,?)'),
+  importLog: db.prepare('INSERT INTO logs (project_id, date, hours, note, ranges, break_minutes, id) VALUES (?,?,?,?,?,?,?)'),
   importTask: db.prepare('INSERT INTO tasks (project_id, title, date, hours, note, repeat, id) VALUES (?,?,?,?,?,?,?)'),
 };
 
@@ -139,12 +140,19 @@ function cleanRanges(v: unknown): { ranges: string | null; hours: number | null 
   return { ranges: spans.map((s) => s.join('-')).join(','), hours: Math.round((total / 60) * 1e4) / 1e4 };
 }
 
+// A log body carries the gross time (hours or ranges) and break_minutes; the stored hours are gross minus the break.
+const grossLog = (l: Body): Body => ({ ...l, hours: Math.round((l.hours + (l.break_minutes ?? 0) / 60) * 1e4) / 1e4 });
 function cleanLog(b: Body): Params {
   if (!Number.isInteger(b.project_id)) bad('project_id required');
   if (!isDate(b.date)) bad('date must be YYYY-MM-DD');
   const { ranges, hours } = cleanRanges(b.ranges); // with ranges, the total is their sum
-  if (!isPos(hours ?? b.hours)) bad('hours must be > 0');
-  return [b.project_id, b.date, hours ?? b.hours, optText(b.note, 'note'), ranges];
+  const gross = hours ?? b.hours;
+  if (!isPos(gross)) bad('hours must be > 0');
+  const brk = b.break_minutes ?? 0;
+  if (!Number.isInteger(brk) || brk < 0 || brk >= 1440) bad('break_minutes must be a whole number from 0 to 1439');
+  const net = Math.round((gross - brk / 60) * 1e4) / 1e4;
+  if (!isPos(net)) bad('break must be shorter than the logged time');
+  return [b.project_id, b.date, net, optText(b.note, 'note'), ranges, brk];
 }
 
 function cleanTask(b: Body): Params {
@@ -226,7 +234,7 @@ function restore(b: Body) {
     saveSettings({ week_hours: b.week_hours, pensum: b.pensum, ics_url: b.ics_url ?? '', ics_counts: b.ics_counts ?? false });
     for (const o of b.overrides ?? []) q.setOverride.run(...cleanOverride(o.date, o));
     for (const p of b.projects) q.importProject.run(...cleanProject(p), id(p));
-    for (const l of b.logs) q.importLog.run(...cleanLog(l), id(l));
+    for (const l of b.logs) q.importLog.run(...cleanLog(grossLog(l)), id(l));
     for (const t of b.tasks) q.importTask.run(...cleanTask(t), id(t));
     db.exec('COMMIT');
   } catch (e) { db.exec('ROLLBACK'); throw e; }
@@ -283,7 +291,7 @@ async function api(method: string, parts: string[], body: Body) {
     if (!existing) throw new HttpError(404, 'not found');
     if (method === 'PUT') {
       // a log's total comes from its ranges, so new hours without new ranges drop the old ranges
-      const merged = { ...existing, ...body, ...(res === 'logs' && 'hours' in body && !('ranges' in body) ? { ranges: null } : {}) };
+      const merged = { ...(res === 'logs' ? grossLog(existing) : existing), ...body, ...(res === 'logs' && 'hours' in body && !('ranges' in body) ? { ranges: null } : {}) };
       t.set.run(...t.clean(merged), id); return t.get.get(id);
     }
     if (method === 'DELETE') { t.del.run(id); return { ok: true }; }

@@ -13,7 +13,8 @@ export interface Project {
 }
 
 export interface Log { id: number; project_id: number; date: string; hours: number; note: string | null;
-  ranges: string | null } // '09:00-12:00,13:00-17:30'; hours is then their sum
+  ranges: string | null; // '09:00-12:00,13:00-17:30'; the gross time is then their sum
+  break_minutes: number } // rest time (lunch), already subtracted from hours
 
 export type Repeat = 'daily' | 'weekdays' | 'weekly';
 export interface Task {

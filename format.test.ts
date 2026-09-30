@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseHours, hoursInput, spanErrors, spansHours } from './src/format.ts';
+import { parseHours, hoursInput, clockMin, spanErrors, spansHours } from './src/format.ts';
 
 test('parseHours accepts decimal, clock and unit forms', () => {
   const near = (s: string, v: number) => assert.ok(Math.abs(parseHours(s)! - v) < 1e-3, `${s} -> ${parseHours(s)}`);
@@ -25,4 +25,8 @@ test('spanErrors flags backwards and overlapping ranges, not unfinished ones', (
   assert.deepEqual(spanErrors(s('10:00-09:00,09:00-09:00')), ['To must be after From', 'To must be after From']);
   assert.deepEqual(spanErrors(s('09:00-12:00,11:00-13:00,14:00-')), ['Overlaps another range', 'Overlaps another range', '']);
   assert.equal(spansHours(s('09:00-12:00,13:00-17:30,10:00-09:00')), 7.5);
+});
+
+test('clockMin formats minutes as h:mm', () => {
+  assert.equal(clockMin(30), '0:30'); assert.equal(clockMin(75), '1:15'); assert.equal(clockMin(605), '10:05');
 });
